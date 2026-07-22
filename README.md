@@ -122,8 +122,9 @@ Triggers: `schedule: '0 */6 * * *'` + `workflow_dispatch` (version, force_rebuil
 | `SYNTHETIC_API_KEY` | Synthetic API key (Anthropic-compatible). |
 | `COPILOT_GITHUB_TOKEN` | GitHub Copilot token. Configures Claude models via GitHub. |
 | `XIAOMI_API_KEY` | Xiaomi MiMo API key (Anthropic-compatible). Configures MiMo v2 Flash. |
+| `OLLAMA_API_KEY` | Ollama Cloud API key. Get one at [ollama.com/settings/keys](https://ollama.com/settings/keys). Enables hosted Ollama models (kimi-k2.5, minimax-m2.7, glm-5, etc.) via the `ollama-cloud` provider. |
 
-Multiple providers can be set simultaneously. Priority for primary model: Anthropic > OpenAI > OpenRouter > Gemini > OpenCode > GitHub Copilot > xAI > Groq > Mistral > Cerebras > Venice > Moonshot > Kimi > MiniMax > Synthetic > ZAI > AI Gateway > Xiaomi > Bedrock > Ollama.
+Multiple providers can be set simultaneously. Priority for primary model: Anthropic > OpenAI > OpenRouter > Gemini > OpenCode > GitHub Copilot > xAI > Groq > Mistral > Cerebras > Venice > Moonshot > Kimi > MiniMax > Synthetic > ZAI > AI Gateway > Xiaomi > Bedrock > Ollama Cloud > Ollama.
 
 If a provider env var is removed, that provider section is cleaned from `openclaw.json` on next start.
 
@@ -142,6 +143,12 @@ If a provider env var is removed, that provider section is cleaned from `opencla
 | `AWS_REGION` | `us-east-1` | AWS region for Bedrock runtime endpoint. |
 | `AWS_SESSION_TOKEN` | | Optional session token for temporary credentials. |
 | `BEDROCK_PROVIDER_FILTER` | `["anthropic"]` | Filter Bedrock model discovery by provider (JSON array or comma-separated string). |
+
+### Ollama Cloud (hosted models at ollama.com)
+
+| Variable | Description |
+|---|---|
+| `OLLAMA_API_KEY` | Ollama Cloud API key from [ollama.com/settings/keys](https://ollama.com/settings/keys). Enables the built-in `ollama-cloud` provider for hosted models like `kimi-k2.5:cloud`. Can coexist with local Ollama (`OLLAMA_BASE_URL`) — useful for cloud chat + local embeddings. |
 
 ### Ollama (local models, no API key needed)
 

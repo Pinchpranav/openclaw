@@ -158,6 +158,7 @@ const builtinProviders = [
   ["ZAI_API_KEY",          "ZAI",                "zai"],
   ["AI_GATEWAY_API_KEY",   "Vercel AI Gateway",  "vercel-ai-gateway"],
   ["COPILOT_GITHUB_TOKEN", "GitHub Copilot",     "github-copilot"],
+  ["OLLAMA_API_KEY",       "Ollama Cloud",       "ollama-cloud"],
 ];
 
 for (const [envKey, label, providerKey] of builtinProviders) {
@@ -352,6 +353,7 @@ const primaryCandidates = [
   [process.env.AI_GATEWAY_API_KEY,     "vercel-ai-gateway/anthropic/claude-opus-4.5"],
   [process.env.XIAOMI_API_KEY,         "xiaomi/mimo-v2-flash"],
   [process.env.AWS_ACCESS_KEY_ID,      "amazon-bedrock/anthropic.claude-opus-4-5-20251101-v1:0"],
+  [process.env.OLLAMA_API_KEY,         "ollama-cloud/kimi-k2.5:cloud"],
   [ollamaUrl,                          "ollama/llama3.3"],
 ];
 if (process.env.OPENCLAW_PRIMARY_MODEL) {
@@ -742,6 +744,7 @@ const hasProvider =
   !!opencodeKey ||
   !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) ||
   !!ollamaUrl ||
+  !!process.env.OLLAMA_API_KEY ||
   // Custom proxy providers also need env var keys
   !!process.env.VENICE_API_KEY || !!process.env.MINIMAX_API_KEY ||
   !!process.env.MOONSHOT_API_KEY || !!process.env.KIMI_API_KEY ||
@@ -754,7 +757,8 @@ if (!hasProvider) {
   console.error("[configure]   XAI_API_KEY, GROQ_API_KEY, MISTRAL_API_KEY, CEREBRAS_API_KEY, ZAI_API_KEY,");
   console.error("[configure]   AI_GATEWAY_API_KEY, OPENCODE_API_KEY, COPILOT_GITHUB_TOKEN, VENICE_API_KEY,");
   console.error("[configure]   MOONSHOT_API_KEY, KIMI_API_KEY, MINIMAX_API_KEY, SYNTHETIC_API_KEY, XIAOMI_API_KEY,");
-  console.error("[configure]   AWS_ACCESS_KEY_ID+AWS_SECRET_ACCESS_KEY (Bedrock), or OLLAMA_BASE_URL (local)");
+  console.error("[configure]   AWS_ACCESS_KEY_ID+AWS_SECRET_ACCESS_KEY (Bedrock), OLLAMA_BASE_URL (local),");
+  console.error("[configure]   or OLLAMA_API_KEY (Ollama Cloud)");
   process.exit(1);
 }
 
