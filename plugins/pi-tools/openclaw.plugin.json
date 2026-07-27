@@ -1,0 +1,33 @@
+{
+  "id": "pi-tools",
+  "name": "Pi Tools",
+  "description": "Lean pi_-prefixed toolset container (read, bash, edit, write). Constructed as a single plugin so all four tools share one cwd and one manifest.",
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "tools": ["pi_read"]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "cwd": {
+        "type": "string",
+        "description": "Default working directory for relative paths. Defaults to the agent workspace at registration time."
+      },
+      "maxOutputLines": {
+        "type": "number",
+        "description": "Output truncation limit for pi_bash and pi_read. Default 2000."
+      },
+      "maxOutputBytes": {
+        "type": "number",
+        "description": "Output truncation byte limit for pi_bash and pi_read. Default 51200 (50KB)."
+      },
+      "enableImageReads": {
+        "type": "boolean",
+        "description": "When true, pi_read returns image content blocks for supported image MIME types. Default true."
+      }
+    }
+  }
+}

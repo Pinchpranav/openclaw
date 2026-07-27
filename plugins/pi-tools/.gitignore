@@ -1,0 +1,5 @@
+# Dependencies are installed at build/start time inside the container.
+node_modules/
+
+# Local test harness — not part of the shipped plugin.
+test/
