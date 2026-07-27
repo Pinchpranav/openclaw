@@ -14,6 +14,7 @@ RUN apt-get update \
 RUN rm -f /etc/nginx/sites-enabled/default
 
 COPY scripts/ /app/scripts/
+COPY plugins/ /app/plugins/
 RUN chmod +x /app/scripts/*.sh
 
 ENV NPM_CONFIG_PREFIX="/data/npm-global" \
@@ -22,6 +23,7 @@ ENV NPM_CONFIG_PREFIX="/data/npm-global" \
     GOPATH="/data/go" \
     PATH="/data/npm-global/bin:/data/uv/tools/bin:/data/go/bin:${PATH}"
 
+ENV OPENCLAW_DOCKER_INIT_SCRIPT=/app/scripts/lean-bootstrap.sh
 ENV PORT=8080
 EXPOSE 8080
 
