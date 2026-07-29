@@ -25,13 +25,16 @@ for plugin_dir in "${PLUGINS_DIR}"/*/; do
     cd "${plugin_dir}" || exit 1
 
     # 1) deps — skip if already installed (restarts). Full install so a future
-    #    build step has typescript available. Non-fatal: a plugin missing deps
-    #    simply won't load (caught at verify time).
+    #    build step has typescript available. --legacy-peer-deps avoids npm
+    #    auto-fetching the heavy `openclaw` peer from the registry; the host
+    #    already provides the SDK (OpenClaw's Jiti alias map resolves it at
+    #    runtime, and `plugins install --link` links node_modules/openclaw).
+    #    Non-fatal: a plugin missing deps simply won't load (caught at verify).
     if [ -d node_modules ]; then
       echo "${LOG_PREFIX}   ${name}: node_modules exists, skip npm install"
     else
-      echo "${LOG_PREFIX}   ${name}: npm install"
-      npm install 2>&1 | sed 's/^/      /' || echo "${LOG_PREFIX}   ${name}: npm install FAILED (continuing)"
+      echo "${LOG_PREFIX}   ${name}: npm install --legacy-peer-deps"
+      npm install --legacy-peer-deps 2>&1 | sed 's/^/      /' || echo "${LOG_PREFIX}   ${name}: npm install FAILED (continuing)"
     fi
 
     # 2) register the plugin in-place (--link: runtime loads from this dir,
