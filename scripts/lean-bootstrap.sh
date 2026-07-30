@@ -52,4 +52,25 @@ for plugin_dir in "${PLUGINS_DIR}"/*/; do
   ) || echo "${LOG_PREFIX} WARN: plugin ${name} step failed; continuing (gateway will still start)"
 done
 
+# 4) Ensure the tools policy in openclaw.json. lean-bootstrap owns the `tools`
+#    block — the compose must NOT set tools via OPENCLAW__tools__* or a `tools` key
+#    in OPENCLAW_CONFIG_JSON, or configure.js deep-merges that on top and
+#    overrides this write. Overwriting the WHOLE `tools` object also wipes any
+#    stale `allow`/`deny` left by earlier OPENCLAW_CONFIG_JSON runs — `allow` +
+#    `alsoAllow` together are schema-rejected (config-tools docs), so clearing
+#    stale keys is the whole point. Idempotent + graceful (warn-and-continue).
+STATE_DIR="${OPENCLAW_STATE_DIR:-/data/.openclaw}"
+CONFIG_FILE="${OPENCLAW_CONFIG_PATH:-${STATE_DIR}/openclaw.json}"
+echo "${LOG_PREFIX} ensuring tools config in ${CONFIG_FILE}"
+mkdir -p "${STATE_DIR}"
+node -e '
+  const fs = require("fs");
+  const file = process.argv[1];
+  let cfg = {};
+  try { cfg = JSON.parse(fs.readFileSync(file, "utf8")); } catch {}
+  cfg.tools = { profile: "minimal", alsoAllow: ["group:fs", "group:runtime", "pi_read"] };
+  fs.writeFileSync(file, JSON.stringify(cfg, null, 2));
+  console.log("[lean-bootstrap] tools config ensured:", JSON.stringify(cfg.tools));
+' "${CONFIG_FILE}" 2>&1 | sed 's/^/      /' || echo "${LOG_PREFIX} WARN: tools config write failed (continuing)"
+
 echo "${LOG_PREFIX} done"
