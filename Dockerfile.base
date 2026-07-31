@@ -21,6 +21,13 @@ WORKDIR /openclaw
 ARG OPENCLAW_GIT_REF=main
 RUN git clone --depth 1 --branch "${OPENCLAW_GIT_REF}" https://github.com/openclaw/openclaw.git .
 
+# Apply local UI patch: long Markdown previews / file editors scroll in the chat sidebar
+# (openclaw/openclaw#113465, not merged upstream). Graceful-fail if this version already has it.
+COPY patches/control-ui-sidebar-scroll.patch /tmp/control-ui-sidebar-scroll.patch
+RUN git apply --whitespace=nowarn /tmp/control-ui-sidebar-scroll.patch \
+  && echo "[patch] control-ui-sidebar-scroll: applied" \
+  || echo "[patch] control-ui-sidebar-scroll: NOT applied (likely already in this version)"
+
 RUN pnpm install --frozen-lockfile
 RUN pnpm ui:install
 
