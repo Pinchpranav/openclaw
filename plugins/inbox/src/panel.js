@@ -101,6 +101,17 @@ async function setState(itemId, changes) {
 	return await res.json();
 }
 
+/** Move an item into a project (projectId) or clear it (null → no project). */
+async function setProject(itemId, projectId) {
+	const res = await fetch(API, {
+		method: "POST",
+		headers: { "Content-Type": "application/json", ...authHeaders() },
+		body: JSON.stringify({ op: "setProject", itemId, projectId }),
+	});
+	if (!res.ok) throw new Error(`POST ${API} → ${res.status}`);
+	return await res.json();
+}
+
 // --- Derived state buckets (build-draft §3) --------------------------------
 // Active 🔴 = not settled, not snoozed (or snoozedUntil passed)
 // Waiting 🟡 = snoozedUntil in the future
@@ -147,39 +158,57 @@ function render() {
 		return;
 	}
 
+	const bucketOrder = ["active", "waiting", "parked", "done"];
+
+	// 1. "(no project)" bucket first — the unassigned sessions you'd organize.
+	const unassigned = store.items.filter((it) => !it.projectId);
+	if (unassigned.length) {
+		root.appendChild(projectSection({
+			id: null,
+			title: "(no project)",
+			items: unassigned,
+			bucketOrder,
+		}));
+	}
+
+	// 2. Each real project section.
 	for (const project of store.projects) {
 		const items = store.items.filter((it) => it.projectId === project.id);
-		const bucketOrder = ["active", "waiting", "parked", "done"];
-		const grouped = {};
-		for (const b of bucketOrder) grouped[b] = [];
-		for (const it of items) grouped[deriveBucket(it)].push(it);
-
-		const section = document.createElement("section");
-		section.className = "project";
-		const head = document.createElement("div");
-		head.className = "project-head";
-		head.innerHTML = `<span class="caret">▾</span><span class="title"></span><span class="count"></span>`;
-		head.querySelector(".title").textContent = project.title;
-		head.querySelector(".count").textContent = `${items.length} items`;
-		head.addEventListener("click", () => section.classList.toggle("collapsed"));
-
-		const body = document.createElement("div");
-		body.className = "project-body";
-
-		for (const b of bucketOrder) {
-			const list = grouped[b];
-			if (!list.length) continue;
-			const st = document.createElement("div");
-			st.className = "shelf-title";
-			st.textContent = bucketLabel(b);
-			body.appendChild(st);
-			for (const it of list) body.appendChild(itemRow(it, b));
-		}
-
-		section.appendChild(head);
-		section.appendChild(body);
-		root.appendChild(section);
+		root.appendChild(projectSection({ id: project.id, title: project.title, items, bucketOrder }));
 	}
+}
+
+/** Build one project section (or the "(no project)" bucket) with 4 state shelves. */
+function projectSection({ id, title, items, bucketOrder }) {
+	const grouped = {};
+	for (const b of bucketOrder) grouped[b] = [];
+	for (const it of items) grouped[deriveBucket(it)].push(it);
+
+	const section = document.createElement("section");
+	section.className = "project" + (id === null ? " noproject" : "");
+	const head = document.createElement("div");
+	head.className = "project-head";
+	head.innerHTML = `<span class="caret">▾</span><span class="title"></span><span class="count"></span>`;
+	head.querySelector(".title").textContent = title;
+	head.querySelector(".count").textContent = `${items.length} items`;
+	head.addEventListener("click", () => section.classList.toggle("collapsed"));
+
+	const body = document.createElement("div");
+	body.className = "project-body";
+
+	for (const b of bucketOrder) {
+		const list = grouped[b];
+		if (!list.length) continue;
+		const st = document.createElement("div");
+		st.className = "shelf-title";
+		st.textContent = bucketLabel(b);
+		body.appendChild(st);
+		for (const it of list) body.appendChild(itemRow(it, b));
+	}
+
+	section.appendChild(head);
+	section.appendChild(body);
+	return section;
 }
 
 function itemRow(item, bucket) {
@@ -246,9 +275,32 @@ function actionMenu(item) {
 	}
 	addAction("Set Active", { settledAt: null, archivedAt: null, snoozedUntil: null, snoozedAt: null });
 
+	// --- Move to project (core organizing act) ---
+	const moveBtn = document.createElement("button");
+	moveBtn.textContent = "Move to project…";
+	moveBtn.addEventListener("click", () => { wrap.classList.remove("open"); pickProject(item); });
+	dd.appendChild(moveBtn);
+
 	wrap.appendChild(btn);
 	wrap.appendChild(dd);
 	return wrap;
+}
+
+/** Inline project picker for the core organizing act (move item into a project). */
+async function pickProject(item) {
+	const existing = store.projects.map((p) => p.title);
+	const title = prompt(`Move “${item.title}” into project:\n(enter an existing name, a new one, or leave blank for “no project”)\n\nExisting: ${existing.join(", ") || "(none)"}`);
+	if (title === null) return; // cancelled
+	const projectId = title.trim();
+	const changes = { projectId: projectId || null };
+	renderStatus(`moving “${item.title}”…`);
+	try {
+		await setProject(item.id, changes.projectId);
+		await refresh();
+		renderStatus(`moved “${item.title}” → ${changes.projectId || "(no project)"}`);
+	} catch (err) {
+		renderStatus(`error: ${err.message}`);
+	}
 }
 
 function iso(ts) {

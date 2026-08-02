@@ -72,6 +72,34 @@ function setState(api: any, needle: string, changes: Partial<Pick<InboxItem, "se
 	return `Inbox item "${item.title}" updated.`;
 }
 
+/**
+ * Assign an item to a project (creating the project if needed).
+ * `projectTitle` empty → clear to "(no project)".
+ */
+function assignProject(api: any, needle: string, projectTitle: string): string {
+	const store = readStore(api);
+	const item = findItem(store, needle);
+	if (!item) {
+		return `No inbox item matched "${needle}".`;
+	}
+	let projectId: string | null = null;
+	let resolvedTitle = "";
+	const title = projectTitle.trim();
+	if (title) {
+		let proj = store.projects.find((p) => p.title.toLowerCase() === title.toLowerCase());
+		if (!proj) {
+			proj = { id: title, title, createdAt: nowIso(), updatedAt: nowIso() };
+			store.projects.push(proj);
+		}
+		projectId = proj.id;
+		resolvedTitle = proj.title;
+	}
+	item.projectId = projectId;
+	item.updatedAt = nowIso();
+	save(resolveStorePath(api), store);
+	return projectId ? `Inbox item "${item.title}" → project "${resolvedTitle}".` : `Inbox item "${item.title}" → (no project).`;
+}
+
 // --- HTTP handlers ---------------------------------------------------------
 
 /** Serve the panel HTML (and its external panel.js) at /plugins/inbox/panel. */
@@ -113,8 +141,47 @@ function handleApi(req: any, res: any): void {
 				const payload = JSON.parse(body || "{}") as {
 					op?: string;
 					itemId?: string;
+					projectId?: string | null;
 					changes?: Partial<Pick<InboxItem, "settledAt" | "archivedAt" | "snoozedUntil" | "snoozedAt">>;
 				};
+
+				// Move an item into a project (creating the project if needed), or
+				// clear it back to "no project" when projectId is null/empty.
+				if (payload.op === "setProject") {
+					if (!payload.itemId) {
+						res.statusCode = 400;
+						res.setHeader?.("Content-Type", "application/json; charset=utf-8");
+						res.end?.(JSON.stringify({ error: "setProject requires itemId" }));
+						return;
+					}
+					const store = load(storePath);
+					const item = store.items.find((it) => it.id === payload.itemId);
+					if (!item) {
+						res.statusCode = 404;
+						res.setHeader?.("Content-Type", "application/json; charset=utf-8");
+						res.end?.(JSON.stringify({ error: "Item not found" }));
+						return;
+					}
+					let projectId: string | null = null;
+					const title = (payload.projectId ?? "").trim();
+					if (title) {
+						let proj = store.projects.find((p) => p.title.toLowerCase() === title.toLowerCase());
+						if (!proj) {
+							proj = { id: title, title, createdAt: nowIso(), updatedAt: nowIso() };
+							store.projects.push(proj);
+						} else {
+							proj.updatedAt = nowIso();
+						}
+						projectId = proj.id;
+					}
+					item.projectId = projectId;
+					item.updatedAt = nowIso();
+					save(storePath, store);
+					res.setHeader?.("Content-Type", "application/json; charset=utf-8");
+					res.end?.(JSON.stringify({ ok: true, item, projectId }));
+					return;
+				}
+
 				if (payload.op !== "setState" || !payload.itemId || !payload.changes) {
 					res.statusCode = 400;
 					res.setHeader?.("Content-Type", "application/json; charset=utf-8");
@@ -206,6 +273,20 @@ export default definePluginEntry({
 		});
 
 		// 3. Slash commands — each delegates to the shared setState helper. pinned-sdk.md §4.
+		// /project is the CORE organizing command: move an item into a project.
+		api.registerCommand?.({
+			name: "project",
+			description: "Assign an inbox item to a project. Usage: /project <item> <ProjectName>",
+			acceptsArgs: true,
+			handler: (ctx: any) => {
+				const args = String(ctx?.args ?? "");
+				const i = args.lastIndexOf(" ");
+				if (i <= 0) {
+					return "Usage: /project <item-title-or-id> <ProjectName>";
+				}
+				return assignProject(api, args.slice(0, i), args.slice(i + 1));
+			},
+		});
 		api.registerCommand?.({
 			name: "done",
 			description: "Mark item done (settled + archived).",

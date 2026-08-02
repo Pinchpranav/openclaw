@@ -29,7 +29,8 @@ export interface Project {
 
 export interface InboxItem {
 	id: string;
-	projectId: string;
+	/** Project this item belongs to, or null for the "(no project)" bucket. */
+	projectId: string | null;
 	title: string;
 	createdAt: string;
 	updatedAt: string;
