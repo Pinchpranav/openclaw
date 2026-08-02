@@ -1,0 +1,23 @@
+{
+  "id": "inbox",
+  "name": "Inbox",
+  "description": "Projects → 4-state conversation inbox for OpenClaw. Gateway-served panel tab with /done /waiting /defer /active slash commands.",
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "storePath": {
+        "type": "string",
+        "description": "Path to the inbox JSON store. Default /data/.openclaw/inbox.json"
+      },
+      "snoozePresets": {
+        "type": "array",
+        "items": { "type": "number" },
+        "description": "Defer presets in minutes. Default [60, 360, 1440, 10080]"
+      }
+    }
+  }
+}

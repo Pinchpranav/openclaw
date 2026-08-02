@@ -1,0 +1,103 @@
+<!doctype html>
+<!--
+  Inbox panel — self-contained vanilla-JS UI (no build step, no React).
+  Served by the gateway at /plugins/inbox/panel inside a sandboxed frame.
+
+  Layout (build-draft §6):
+    Projects = collapsible sections; each has the 4 derived state shelves
+    (Active / Waiting / Parked / Done) derived from item lifecycle fields
+    (settledAt, archivedAt, snoozedUntil) — no 4th-state enum.
+
+  MVP scope (build-draft §10): no drag-drop, no bulk, no WebSocket push.
+  Polling the API is fine.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Inbox</title>
+  <style>
+    :root {
+      --bg: #0f1216;
+      --panel: #171b22;
+      --panel-2: #1e242e;
+      --border: #2a323e;
+      --text: #e6e9ee;
+      --muted: #8b94a3;
+      --active: #ff5c5c;
+      --waiting: #f2c94c;
+      --parked: #c9cfd8;
+      --done: #3ecf8e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 16px;
+      background: var(--bg); color: var(--text);
+      font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    }
+    header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+    header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+    .pill { font-size: 12px; color: var(--muted); }
+    .project {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 8px; margin-bottom: 12px; overflow: hidden;
+    }
+    .project-head {
+      display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+      cursor: pointer; user-select: none; background: var(--panel-2);
+    }
+    .project-head .caret { transition: transform .12s; color: var(--muted); }
+    .project.collapsed .caret { transform: rotate(-90deg); }
+    .project-head .title { font-weight: 600; flex: 1; }
+    .project-head .count { color: var(--muted); font-size: 12px; }
+    .project-body { padding: 4px 0 8px; display: block; }
+    .project.collapsed .project-body { display: none; }
+    .shelf-title {
+      padding: 8px 12px 2px; font-size: 11px; text-transform: uppercase;
+      letter-spacing: .05em; color: var(--muted);
+    }
+    .item {
+      display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 24px;
+    }
+    .item .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+    .item.active .dot { background: var(--active); }
+    .item.waiting .dot { background: var(--waiting); }
+    .item.parked .dot { background: var(--parked); }
+    .item.done .dot { background: var(--done); }
+    .item .label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .item.done .label { color: var(--muted); text-decoration: line-through; }
+    .item .wait-hint { font-size: 12px; color: var(--waiting); }
+    .item button.action {
+      background: none; border: 1px solid var(--border); color: var(--muted);
+      border-radius: 4px; padding: 2px 8px; font-size: 12px; cursor: pointer;
+    }
+    .item button.action:hover { color: var(--text); border-color: var(--muted); }
+    .menu {
+      position: relative; display: inline-block;
+    }
+    .menu .dropdown {
+      display: none; position: absolute; right: 0; top: 22px; z-index: 20;
+      background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+      min-width: 170px; padding: 4px; box-shadow: 0 8px 24px rgba(0,0,0,.4);
+    }
+    .menu.open .dropdown { display: block; }
+    .menu .dropdown button {
+      display: block; width: 100%; text-align: left; background: none; border: none;
+      color: var(--text); padding: 7px 10px; font-size: 13px; border-radius: 4px; cursor: pointer;
+    }
+    .menu .dropdown button:hover { background: var(--panel); }
+    .empty { color: var(--muted); padding: 4px 24px 8px; font-size: 13px; }
+    #status { color: var(--muted); font-size: 12px; min-height: 16px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Inbox</h1>
+    <span class="pill" id="status">loading…</span>
+  </header>
+  <main id="projects"></main>
+
+  <!-- panel.js is served separately at /plugins/inbox/panel.js (same-origin). -->
+  <script src="/plugins/inbox/panel.js"></script>
+</body>
+</html>
