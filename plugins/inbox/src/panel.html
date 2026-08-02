@@ -97,7 +97,8 @@
   </header>
   <main id="projects"></main>
 
-  <!-- panel.js is served separately at /plugins/inbox/panel.js (same-origin). -->
-  <script src="/plugins/inbox/panel.js"></script>
+  <!-- panel.js is served separately at /plugins/inbox/panel.js (same-origin).
+       ?v=2 cache-busts so panel edits are picked up without a hard refresh. -->
+  <script src="/plugins/inbox/panel.js?v=2"></script>
 </body>
 </html>
