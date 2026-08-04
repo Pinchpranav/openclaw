@@ -72,7 +72,7 @@ node -e '
   delete cfg.tools.allow;
   delete cfg.tools.deny;
   cfg.tools.profile = "minimal";
-  cfg.tools.alsoAllow = ["group:fs", "group:runtime", "group:web", "pi_read"];
+  cfg.tools.alsoAllow = ["group:fs", "group:runtime", "group:web", "pi_read", "browser", "group:sessions"];
   fs.writeFileSync(file, JSON.stringify(cfg, null, 2));
   console.log("[lean-bootstrap] tools config ensured:", JSON.stringify(cfg.tools));
 ' "${CONFIG_FILE}" 2>&1 | sed 's/^/      /' || echo "${LOG_PREFIX} WARN: tools config write failed (continuing)"
