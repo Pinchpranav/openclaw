@@ -8,7 +8,13 @@ export type Result<T> = { ok: true; payload: T } | { ok: false; error: string };
 async function dispatch<T>(method: string, params: unknown): Promise<Result<T>> {
   try {
     const result = await dispatchGatewayMethod(method, params, { expectFinal: true });
-    return { ok: true, payload: result as T };
+    // dispatchGatewayMethod returns the full GatewayMethodDispatchResponse envelope:
+    // { ok: boolean, payload?: unknown, error?: GatewayMethodDispatchError, meta?: Record<string, unknown> }
+    // We need to unwrap the inner payload.
+    if (!result.ok) {
+      return { ok: false, error: result.error?.message ?? "Gateway method failed" };
+    }
+    return { ok: true, payload: result.payload as T };
   } catch (err) {
     return { ok: false, error: String(err) };
   }
@@ -56,7 +62,9 @@ export async function listAgents(): Promise<
 > {
   const res = await dispatch<any>("agents.list", {});
   if (!res.ok) return res;
-  const agents = res.payload?.agents ?? [];
+  // res.payload is the gateway method's inner payload (after unwrap in dispatch).
+  // Shape: { agents: [...] } OR (if ever unwrapped further) [...] directly.
+  const agents = Array.isArray(res.payload) ? res.payload : (res.payload?.agents ?? []);
   return { ok: true, payload: agents.map(trimAgentRow) };
 }
 
@@ -66,7 +74,9 @@ export async function listSessions(): Promise<
 > {
   const res = await dispatch<any>("sessions.list", { includeDerivedTitles: true });
   if (!res.ok) return res;
-  const sessions = res.payload?.sessions ?? res.payload ?? [];
+  // res.payload is the gateway method's inner payload (after unwrap in dispatch).
+  // Shape: { sessions: [...] } OR (if ever unwrapped further) [...] directly.
+  const sessions = Array.isArray(res.payload) ? res.payload : (res.payload?.sessions ?? []);
   return { ok: true, payload: sessions.map(trimSessionRow) };
 }
 
