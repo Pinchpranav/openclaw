@@ -16,6 +16,37 @@ echo "${LOG_PREFIX} starting"
 command -v openclaw >/dev/null 2>&1 || { echo "${LOG_PREFIX} WARN: openclaw CLI not on PATH; skipping"; exit 0; }
 [ -d "${PLUGINS_DIR}" ] || { echo "${LOG_PREFIX} no ${PLUGINS_DIR}; nothing to do"; exit 0; }
 
+STATE_DIR="${OPENCLAW_STATE_DIR:-/data/.openclaw}"
+CONFIG_FILE="${OPENCLAW_CONFIG_PATH:-${STATE_DIR}/openclaw.json}"
+
+# ── 0) Self-heal + tools config in openclaw.json (before installing plugins, so
+#       the install/enable commands run against a valid config).
+#   • plugins: drop stale entries + load.paths whose dir no longer exists under
+#     /app/plugins (e.g. an archived plugin like inbox).
+#   • tools: own profile+alsoAllow, wipe stale allow/deny; preserve sub-keys like
+#     tools.web that the compose owns via OPENCLAW__tools__web__*. Idempotent.
+mkdir -p "${STATE_DIR}"
+node -e '
+  const fs = require("fs");
+  const file = process.argv[1];
+  let cfg = {};
+  try { cfg = JSON.parse(fs.readFileSync(file, "utf8")); } catch {}
+
+  const dirs = new Set(fs.readdirSync(process.argv[2]));
+  const pl = cfg.plugins = cfg.plugins || {};
+  if (Array.isArray(pl.load?.paths)) pl.load.paths = pl.load.paths.filter(fs.existsSync);
+  if (pl.entries) for (const id of Object.keys(pl.entries)) if (!dirs.has(id)) delete pl.entries[id];
+
+  cfg.tools = cfg.tools || {};
+  delete cfg.tools.allow;
+  delete cfg.tools.deny;
+  cfg.tools.profile = "minimal";
+  cfg.tools.alsoAllow = ["group:fs", "group:runtime", "group:web", "pi_read", "browser", "group:sessions"];
+
+  fs.writeFileSync(file, JSON.stringify(cfg, null, 2));
+  console.log("[lean-bootstrap] plugins pruned + tools ensured");
+' "${CONFIG_FILE}" "${PLUGINS_DIR}" 2>&1 | sed 's/^/      /' || echo "${LOG_PREFIX} WARN: config write failed (continuing)"
+
 shopt -s nullglob
 for plugin_dir in "${PLUGINS_DIR}"/*/; do
   name="$(basename "${plugin_dir}")"
@@ -51,30 +82,5 @@ for plugin_dir in "${PLUGINS_DIR}"/*/; do
     echo "${LOG_PREFIX} === ${name} ready ==="
   ) || echo "${LOG_PREFIX} WARN: plugin ${name} step failed; continuing (gateway will still start)"
 done
-
-# 4) Ensure the tools allowlist in openclaw.json. lean-bootstrap owns the
-#    allowlist keys (profile + alsoAllow) and wipes any stale `allow`/`deny`
-#    left by earlier OPENCLAW_CONFIG_JSON runs — `allow` + `alsoAllow` together
-#    are schema-rejected (config-tools docs), so clearing stale keys matters.
-#    Sub-keys like `tools.web` (search/fetch provider config) are PRESERVED so
-#    the compose can own them via OPENCLAW__tools__web__* env vars; configure.js
-#    deep-merges those env vars on top after this write. Idempotent + graceful.
-STATE_DIR="${OPENCLAW_STATE_DIR:-/data/.openclaw}"
-CONFIG_FILE="${OPENCLAW_CONFIG_PATH:-${STATE_DIR}/openclaw.json}"
-echo "${LOG_PREFIX} ensuring tools config in ${CONFIG_FILE}"
-mkdir -p "${STATE_DIR}"
-node -e '
-  const fs = require("fs");
-  const file = process.argv[1];
-  let cfg = {};
-  try { cfg = JSON.parse(fs.readFileSync(file, "utf8")); } catch {}
-  cfg.tools = cfg.tools || {};
-  delete cfg.tools.allow;
-  delete cfg.tools.deny;
-  cfg.tools.profile = "minimal";
-  cfg.tools.alsoAllow = ["group:fs", "group:runtime", "group:web", "pi_read", "browser", "group:sessions"];
-  fs.writeFileSync(file, JSON.stringify(cfg, null, 2));
-  console.log("[lean-bootstrap] tools config ensured:", JSON.stringify(cfg.tools));
-' "${CONFIG_FILE}" 2>&1 | sed 's/^/      /' || echo "${LOG_PREFIX} WARN: tools config write failed (continuing)"
 
 echo "${LOG_PREFIX} done"
