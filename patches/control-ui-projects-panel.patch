@@ -1,0 +1,842 @@
+diff --git a/ui/src/components/app-sidebar.ts b/ui/src/components/app-sidebar.ts
+index 8ba3b28..e0afd27 100644
+--- a/ui/src/components/app-sidebar.ts
++++ b/ui/src/components/app-sidebar.ts
+@@ -303,6 +303,19 @@ class AppSidebar extends LitElement {
+         </div>
+         <div class="sidebar-brand__actions">
+           ${this.renderSearch()}
++          <openclaw-tooltip .content=${this.projectsView ? "Back to sessions" : "Project Management"}>
++            <button
++              class="sidebar-brand__icon sidebar-projects-toggle ${this.projectsView ? "sidebar-projects-toggle--active" : ""}"
++              type="button"
++              @click=${() => {
++                this.projectsView = !this.projectsView;
++              }}
++              aria-label=${this.projectsView ? "Back to sessions" : "Project Management"}
++              aria-pressed=${String(this.projectsView)}
++            >
++              ${icons.kanban}
++            </button>
++          </openclaw-tooltip>
+           <openclaw-tooltip .content=${collapseTooltip}>
+             <button
+               class="sidebar-brand__icon"
+@@ -1660,14 +1673,27 @@ class AppSidebar extends LitElement {
+         <div class="sidebar-shell">
+           ${this.renderBrand()}
+           <div class="sidebar-shell__body">
+-            <nav class="sidebar-nav" @contextmenu=${this.openCustomizeMenuFromContext}>
+-              ${this.collapsed ? this.renderRoute("chat") : nothing}
+-              <div class="nav-section__items">
+-                ${this.sidebarPinnedRoutes.map((routeId) => this.renderRoute(routeId))}
+-              </div>
+-              ${this.renderMoreSection()}
+-            </nav>
+-            ${this.renderSessions()}
++            ${this.projectsView
++              ? nothing
++              : html`
++                  <nav
++                    class="sidebar-nav"
++                    @contextmenu=${this.openCustomizeMenuFromContext}
++                  >
++                    ${this.collapsed ? this.renderRoute("chat") : nothing}
++                    <div class="nav-section__items">
++                      ${this.sidebarPinnedRoutes.map((routeId) => this.renderRoute(routeId))}
++                    </div>
++                    ${this.renderMoreSection()}
++                  </nav>
++                `}
++            ${this.projectsView
++              ? html`<openclaw-projects-panel
++                  .collapsed=${this.collapsed}
++                  .onOpenSession=${(sessionKey: string) => this.selectSession(sessionKey)}
++                  .authToken=${this.context?.gateway.snapshot.hello?.auth?.deviceToken}
++                ></openclaw-projects-panel>`
++              : this.renderSessions()}
+           </div>
+           <div class="sidebar-shell__footer">
+             <div class="sidebar-footer-bar">
+diff --git a/ui/src/components/projects-panel.ts b/ui/src/components/projects-panel.ts
+new file mode 100644
+index 0000000..13b8870
+--- /dev/null
++++ b/ui/src/components/projects-panel.ts
+@@ -0,0 +1,394 @@
++// Project Management panel — REAL DATA (Track 2 wiring).
++//
++// This is the dumb UI prototype (Track 1) with the hardcoded DUMMY_* dataset
++// replaced by real reads from the projects plugin:
++//   GET /plugins/projects/api  →  { ok, state, agents, sessions }
++//
++// The rendering logic is unchanged from the validated dumb UI. Only the data
++// source changed. Writes (createProject/createThread/setSessionState/
++// setNoInbox/setProjectState) POST to the same route then reload.
++//
++// Auth: the panel is rendered inside app-sidebar, which passes the gateway
++// device token via the `authToken` property (from
++// context.gateway.snapshot.hello.auth.deviceToken). Same-origin fetch with
++// `Authorization: Bearer <token>` + `credentials: "same-origin"`.
++
++import { LitElement, html, nothing } from "lit";
++import { property, state } from "lit/decorators.js";
++import { icons } from "./icons.ts";
++
++type LifecycleState = "active" | "deferred" | "done";
++
++// ---------------------------------------------------------------------------
++// Real data shapes (from GET /plugins/projects/api)
++// ---------------------------------------------------------------------------
++type ApiAgent = {
++  id: string;
++  name?: string;
++  emoji?: string;
++};
++
++type ApiSession = {
++  key: string;
++  name?: string;
++  label?: string;
++  agentId?: string; // parsed from key by the plugin
++  updatedAt?: number;
++  [k: string]: unknown;
++};
++
++type ApiState = {
++  version?: number;
++  projects: Record<string, { state?: LifecycleState }>;
++  sessions: Record<string, { state?: LifecycleState; noInbox?: boolean }>;
++};
++
++type ApiResponse = {
++  ok: boolean;
++  state?: ApiState;
++  agents?: ApiAgent[];
++  sessions?: ApiSession[];
++  error?: string;
++};
++
++// ---------------------------------------------------------------------------
++// Component
++// ---------------------------------------------------------------------------
++export class ProjectsPanel extends LitElement {
++  override createRenderRoot() {
++    return this;
++  }
++
++  @property({ attribute: false }) collapsed = false;
++  @property({ attribute: false }) onOpenSession?: (sessionKey: string) => void;
++  @property({ attribute: false }) authToken?: string | null;
++
++  @state() private collapsedProjects = new Set<string>();
++  @state() private sessionFilters = new Map<string, LifecycleState>(); // per-project session filter (independent per folder)
++  @state() private projectFilter: LifecycleState | "all" = "all"; // across-project filter
++
++  // ---- data source (real) ----
++  @state() private agents: ApiAgent[] = [];
++  @state() private sessions: ApiSession[] = [];
++  @state() private stateStore: ApiState = { projects: {}, sessions: {} };
++  @state() private loading = true;
++  @state() private error: string | null = null;
++
++  override connectedCallback() {
++    super.connectedCallback();
++    void this.load();
++  }
++
++  private async load() {
++    this.loading = true;
++    this.error = null;
++    try {
++      const headers = new Headers({ Accept: "application/json" });
++      const token = this.authToken?.trim();
++      if (token) headers.set("Authorization", `Bearer ${token}`);
++      const res = await fetch("/plugins/projects/api", {
++        method: "GET",
++        headers,
++        credentials: "same-origin",
++      });
++      if (!res.ok) {
++        this.error = `API ${res.status}`;
++        return;
++      }
++      const data = (await res.json()) as ApiResponse;
++      if (!data.ok) {
++        this.error = data.error ?? "API error";
++        return;
++      }
++      this.agents = data.agents ?? [];
++      this.sessions = data.sessions ?? [];
++      this.stateStore = data.state ?? { projects: {}, sessions: {} };
++    } catch (err) {
++      this.error = String(err);
++    } finally {
++      this.loading = false;
++    }
++  }
++
++  private async post(op: Record<string, unknown>) {
++    try {
++      const headers = new Headers({ "Content-Type": "application/json" });
++      const token = this.authToken?.trim();
++      if (token) headers.set("Authorization", `Bearer ${token}`);
++      const res = await fetch("/plugins/projects/api", {
++        method: "POST",
++        headers,
++        credentials: "same-origin",
++        body: JSON.stringify(op),
++      });
++      if (!res.ok) {
++        this.error = `POST ${res.status}`;
++        return;
++      }
++      const data = (await res.json()) as { ok: boolean; error?: string };
++      if (!data.ok) {
++        this.error = data.error ?? "POST error";
++        return;
++      }
++      await this.load();
++    } catch (err) {
++      this.error = String(err);
++    }
++  }
++
++  // ---- derived helpers ----
++  private projectState(agentId: string): LifecycleState {
++    return this.stateStore.projects[agentId]?.state ?? "active";
++  }
++
++  private sessionState(key: string): LifecycleState {
++    return this.stateStore.sessions[key]?.state ?? "active";
++  }
++
++  private sessionNoInbox(key: string): boolean {
++    return this.stateStore.sessions[key]?.noInbox ?? false;
++  }
++
++  private projectName(agent: ApiAgent): string {
++    return agent.name || agent.id;
++  }
++
++  private updatedHoursAgo(s: ApiSession): number {
++    const t = s.updatedAt;
++    if (typeof t !== "number" || !Number.isFinite(t)) return Infinity;
++    return (Date.now() - t) / 3_600_000;
++  }
++
++  // ---- inbox: active + within 2 days + not noInbox'd ----
++  private inboxSessions(): ApiSession[] {
++    return this.sessions
++      .filter(
++        (s) =>
++          this.sessionState(s.key) === "active" &&
++          !this.sessionNoInbox(s.key) &&
++          this.updatedHoursAgo(s) <= 48,
++      )
++      .sort((a, b) => this.updatedHoursAgo(a) - this.updatedHoursAgo(b));
++  }
++
++  // ---- projects, filtered by their own (independent) state ----
++  private filteredProjects(): ApiAgent[] {
++    const all = this.agents;
++    if (this.projectFilter === "all") return all;
++    return all.filter((a) => this.projectState(a.id) === this.projectFilter);
++  }
++
++  // ---- per-project session filter (independent across folders) ----
++  private sessionFilterFor(projectId: string): LifecycleState {
++    return this.sessionFilters.get(projectId) ?? "active";
++  }
++  private setSessionFilterFor(projectId: string, st: LifecycleState) {
++    const next = new Map(this.sessionFilters);
++    next.set(projectId, st);
++    this.sessionFilters = next;
++  }
++
++  private toggleProject(id: string) {
++    const next = new Set(this.collapsedProjects);
++    if (next.has(id)) next.delete(id);
++    else next.add(id);
++    this.collapsedProjects = next;
++  }
++
++  private renderStateDot(state: LifecycleState) {
++    return html`<span class="pm-dot pm-dot--${state}" title=${state}></span>`;
++  }
++
++  private renderProjectTag(projectName: string) {
++    return html`<span class="pm-project-tag">${projectName}</span>`;
++  }
++
++  private renderInboxRow(s: ApiSession) {
++    const name = s.name || s.label || s.key;
++    const agent = this.agents.find((a) => a.id === s.agentId);
++    return html`
++      <div
++        class="pm-row"
++        data-key=${s.key}
++        @click=${() => this.onOpenSession?.(s.key)}
++      >
++        <span class="pm-row__name">${name}</span>
++        ${agent ? this.renderProjectTag(this.projectName(agent)) : nothing}
++      </div>
++    `;
++  }
++
++  private renderProjectStateDots(members: ApiSession[]) {
++    // Per-state breakdown: one colored dot + count per session state present.
++    return html`<span class="pm-dots">
++      ${(["active", "deferred", "done"] as LifecycleState[]).map((st) => {
++        const n = members.filter((m) => this.sessionState(m.key) === st).length;
++        return n > 0
++          ? html`<span class="pm-dotitem">
++              <span class="pm-dot pm-dot--${st}"></span><span class="pm-dotitem__n">${n}</span>
++            </span>`
++          : nothing;
++      })}
++    </span>`;
++  }
++
++  private renderProjectRow(s: ApiSession) {
++    const name = s.name || s.label || s.key;
++    const hours = this.updatedHoursAgo(s);
++    const time = hours === Infinity ? "—" : hours < 1 ? "now" : hours < 24 ? `${Math.round(hours)}h` : `${Math.round(hours / 24)}d`;
++    return html`
++      <div
++        class="pm-row pm-row--project"
++        data-key=${s.key}
++        @click=${() => this.onOpenSession?.(s.key)}
++      >
++        ${this.renderStateDot(this.sessionState(s.key))}
++        <span class="pm-row__name">${name}</span>
++        ${this.sessionNoInbox(s.key) ? html`<span class="pm-noinbox" title="Hidden from inbox">${icons.eyeOff}</span>` : nothing}
++        <span class="pm-row__time">${time}</span>
++      </div>
++    `;
++  }
++
++  private addProject() {
++    const name = window.prompt("New project name");
++    if (!name?.trim()) return;
++    void this.post({ op: "createProject", name: name.trim() });
++  }
++
++  private addSession(projectId: string) {
++    const label = window.prompt(`New session in ${projectId}`);
++    if (!label?.trim()) return;
++    void this.post({ op: "createThread", agentId: projectId, label: label.trim() });
++  }
++
++  override render() {
++    const inbox = this.inboxSessions();
++    const filteredProjects = this.filteredProjects();
++
++    return html`
++      <div class="pm-panel ${this.collapsed ? "pm-panel--collapsed" : ""}">
++        <div class="pm-panel__heading">
++          <span class="pm-panel__icon" aria-hidden="true">${icons.kanban}</span>
++          <span class="pm-panel__title">Project Management</span>
++        </div>
++
++        ${this.loading
++          ? html`<div class="pm-empty">Loading…</div>`
++          : this.error
++            ? html`<div class="pm-empty pm-empty--error">${this.error}</div>`
++            : html`
++        <!-- INBOX -->
++        <div class="pm-section pm-section--divider">
++          <div class="pm-section__head">
++            <span class="pm-section__label">Inbox</span>
++            <span class="pm-section__hint">active · last 2 days</span>
++          </div>
++          <div class="pm-section__body pm-inbox">
++            ${inbox.length === 0
++              ? html`<div class="pm-empty">Nothing active in the last 2 days.</div>`
++              : inbox.map((s) => this.renderInboxRow(s))}
++          </div>
++        </div>
++
++        <!-- PROJECTS -->
++        <div class="pm-section">
++          <div class="pm-section__head">
++            <span class="pm-section__label">Projects</span>
++            <button
++              class="pm-add pm-add--head"
++              type="button"
++              title="New project"
++              @click=${(e: Event) => {
++                e.stopPropagation();
++                this.addProject();
++              }}
++            >
++              ${icons.plus}
++            </button>
++          </div>
++
++          <!-- PROJECT STATE TABS: view projects by their own state (independent of session state) -->
++          <div class="pm-project-tabs">
++            ${(["all", "active", "deferred", "done"] as const).map((f) => {
++              const on = this.projectFilter === f;
++              return html`
++                <button
++                  class="pm-project-tab ${on ? "pm-project-tab--on" : ""}"
++                  @click=${(e: Event) => {
++                    e.stopPropagation();
++                    this.projectFilter = f;
++                  }}
++                >
++                  ${f}
++                </button>
++              `;
++            })}
++          </div>
++
++          ${filteredProjects.map((p) => {
++            const members = this.sessions.filter((s) => s.agentId === p.id);
++            const collapsed = this.collapsedProjects.has(p.id);
++            const projectSessionFilter = this.sessionFilterFor(p.id);
++            const filtered = members.filter((s) => this.sessionState(s.key) === projectSessionFilter);
++            return html`
++              <div class="pm-project">
++                <div class="pm-project__head" @click=${() => this.toggleProject(p.id)}>
++                  <span class="pm-chevron" aria-hidden="true"
++                    >${collapsed ? icons.chevronRight : icons.chevronDown}</span
++                  >
++                  <span class="pm-project__name">${this.projectName(p)}</span>
++                  ${collapsed ? this.renderProjectStateDots(members) : nothing}
++                  <span class="pm-project__count">${members.length}</span>
++                  <button
++                    class="pm-add pm-add--project"
++                    type="button"
++                    title="New session in ${this.projectName(p)}"
++                    @click=${(e: Event) => {
++                      e.stopPropagation();
++                      this.addSession(p.id);
++                    }}
++                  >
++                    ${icons.plus}
++                  </button>
++                </div>
++
++                ${collapsed
++                  ? nothing
++                  : html`
++                      <div class="pm-project__filter">
++                        ${(["active", "deferred", "done"] as LifecycleState[]).map((st) => {
++                          const n = members.filter((m) => this.sessionState(m.key) === st).length;
++                          return html`
++                            <button
++                              class="pm-filter ${projectSessionFilter === st ? "pm-filter--on" : ""}"
++                              @click=${(e: Event) => {
++                                e.stopPropagation();
++                                this.setSessionFilterFor(p.id, st);
++                              }}
++                            >
++                              ${st} ${n > 0 ? html`<span class="pm-filter__n">${n}</span>` : nothing}
++                            </button>
++                          `;
++                        })}
++                      </div>
++
++                      <div class="pm-project__body">
++                        ${filtered.length === 0
++                          ? html`<div class="pm-empty">No ${projectSessionFilter} sessions.</div>`
++                          : filtered.map((s) => this.renderProjectRow(s))}
++                      </div>
++                    `}
++              </div>
++            `;
++          })}
++        </div>
++        `}
++      </div>
++    `;
++  }
++}
++
++if (!customElements.get("openclaw-projects-panel")) {
++  customElements.define("openclaw-projects-panel", ProjectsPanel);
++}
+diff --git a/ui/src/styles/layout.css b/ui/src/styles/layout.css
+index 73caaea..a000aa0 100644
+--- a/ui/src/styles/layout.css
++++ b/ui/src/styles/layout.css
+@@ -1954,3 +1954,356 @@
+   color: var(--muted);
+   background: var(--bg);
+ }
++/* ─── Project Management panel (inbox-first sidebar view) ─────────────── */
++.sidebar-projects-toggle--active {
++  background: var(--surface-2, rgba(0, 0, 0, 0.06));
++  color: var(--accent, inherit);
++}
++
++.pm-panel {
++  display: flex;
++  flex-direction: column;
++  gap: 12px;
++  padding: 10px 6px;
++  overflow-y: auto;
++  min-height: 0;
++  flex: 1;
++}
++
++/* The custom element host must also be a bounded flex child of the sidebar
++   body, or its inner .pm-panel can't grow and scroll. */
++openclaw-projects-panel {
++  display: flex;
++  flex-direction: column;
++  flex: 1;
++  min-height: 0;
++}
++
++.pm-panel__heading {
++  display: flex;
++  align-items: center;
++  gap: 6px;
++  padding: 2px 6px 10px;
++  font-weight: 600;
++  font-size: 13px;
++  flex-shrink: 0;
++  border-bottom: 1px solid var(--border, rgba(128, 128, 128, 0.22));
++}
++.pm-panel__icon {
++  display: inline-flex;
++  color: var(--muted);
++}
++.pm-panel__title {
++  white-space: nowrap;
++}
++
++/* ---- sections (Inbox / Projects) ---- */
++.pm-section {
++  display: flex;
++  flex-direction: column;
++  gap: 4px;
++}
++.pm-section__head {
++  display: flex;
++  align-items: baseline;
++  gap: 6px;
++  padding: 6px 6px 2px;
++  font-size: 11px;
++  text-transform: uppercase;
++  letter-spacing: 0.04em;
++  color: var(--muted);
++}
++.pm-section__label {
++  font-weight: 600;
++}
++.pm-section__hint {
++  font-size: 10px;
++  text-transform: none;
++  letter-spacing: 0;
++  color: var(--muted);
++  opacity: 0.8;
++}
++/* + button on the Projects section header (right-aligned) */
++.pm-add--head {
++  margin-left: auto;
++}
++.pm-section__body {
++  display: flex;
++  flex-direction: column;
++}
++/* divider under the Inbox section body */
++.pm-section--divider .pm-section__body {
++  padding-bottom: 10px;
++  border-bottom: 1px solid var(--border, rgba(128, 128, 128, 0.22));
++}
++
++/* + add buttons */
++.pm-add {
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  width: 18px;
++  height: 18px;
++  padding: 0;
++  border: none;
++  border-radius: var(--radius-s, 4px);
++  background: none;
++  color: var(--muted);
++  cursor: pointer;
++  flex-shrink: 0;
++  opacity: 0.75;
++}
++.pm-add:hover {
++  opacity: 1;
++  color: var(--text, inherit);
++  background: var(--surface-2, rgba(0, 0, 0, 0.06));
++}
++.pm-add svg {
++  width: 14px;
++  height: 14px;
++  stroke: currentColor;
++  fill: none;
++  stroke-width: 2px;
++}
++.pm-add--project {
++  margin-left: 2px;
++}
++
++/* ---- inbox rows (name + project tag) ---- */
++.pm-row {
++  display: flex;
++  align-items: center;
++  gap: 8px;
++  padding: 5px 8px;
++  border-radius: var(--radius-s, 6px);
++  cursor: pointer;
++  font-size: 12.5px;
++  line-height: 1.35;
++}
++.pm-row:hover {
++  background: var(--surface-2, rgba(0, 0, 0, 0.06));
++}
++.pm-row__name {
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++  flex: 1 1 auto;
++  min-width: 0;
++}
++.pm-row--project {
++  gap: 6px;
++  padding: 4px 8px 4px 10px;
++}
++.pm-row__time {
++  font-size: 10px;
++  color: var(--muted);
++  opacity: 0.85;
++  flex-shrink: 0;
++  font-variant-numeric: tabular-nums;
++}
++
++/* project tag next to an inbox row's name */
++.pm-project-tag {
++  flex-shrink: 0;
++  font-size: 10px;
++  color: var(--muted);
++  background: var(--surface-2, rgba(0, 0, 0, 0.06));
++  border-radius: var(--radius-full, 999px);
++  padding: 1px 7px;
++  max-width: 90px;
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++/* state dot */
++.pm-dot {
++  display: inline-block;
++  flex-shrink: 0;
++  width: 7px;
++  height: 7px;
++  border-radius: 50%;
++  margin-left: 1px;
++}
++.pm-dot--active { background: var(--accent, #4c9aff); }
++.pm-dot--deferred { background: #eab308; }
++.pm-dot--done { background: var(--success, #16a34a); }
++
++/* grouped state dots shown in a collapsed project header (per-state breakdown) */
++.pm-dots {
++  display: inline-flex;
++  align-items: center;
++  gap: 7px;
++  flex-shrink: 0;
++  margin-left: auto;
++}
++.pm-dotitem {
++  display: inline-flex;
++  align-items: center;
++  gap: 3px;
++  line-height: 1;
++}
++.pm-dotitem .pm-dot {
++  margin-left: 0;
++}
++.pm-dotitem__n {
++  font-size: 10px;
++  color: var(--muted);
++  font-variant-numeric: tabular-nums;
++}
++
++/* noinbox marker */
++.pm-noinbox {
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  flex-shrink: 0;
++  color: var(--muted);
++  opacity: 0.7;
++}
++.pm-noinbox svg {
++  width: 12px;
++  height: 12px;
++  stroke: currentColor;
++  fill: none;
++  stroke-width: 1.7px;
++}
++
++/* ---- projects ---- */
++.pm-project {
++  display: flex;
++  flex-direction: column;
++}.pm-project__head {
++  display: flex;
++  align-items: center;
++  gap: 6px;
++  padding: 4px 6px;
++  border-radius: var(--radius-s, 6px);
++  cursor: pointer;
++  user-select: none;
++  font-size: 12.5px;
++}
++.pm-project__head:hover {
++  background: var(--surface-2, rgba(0, 0, 0, 0.06));
++}
++.pm-project__name {
++  flex: 1 1 auto;
++  min-width: 0;
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++  font-weight: 500;
++}
++.pm-project__count {
++  flex-shrink: 0;
++  font-size: 10px;
++  color: var(--muted);
++  background: var(--surface-2, rgba(0, 0, 0, 0.06));
++  border-radius: var(--radius-full, 999px);
++  min-width: 18px;
++  height: 18px;
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  padding: 0 5px;
++}
++/* state dot shown only when the project is collapsed */
++.pm-project__head .pm-dot {
++  margin-left: 2px;
++}
++.pm-chevron {
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  color: var(--muted);
++  flex-shrink: 0;
++  opacity: 0.8;
++}
++.pm-chevron svg {
++  width: 12px;
++  height: 12px;
++  stroke: currentColor;
++  fill: none;
++  stroke-width: 1.7px;
++}
++
++/* per-project session filter (active/deferred/done + count) */
++.pm-project__filter {
++  display: flex;
++  gap: 4px;
++  padding: 2px 8px 2px 22px;
++  flex-wrap: wrap;
++}
++.pm-filter {
++  display: inline-flex;
++  align-items: center;
++  gap: 4px;
++  font-size: 10px;
++  line-height: 1;
++  padding: 3px 8px;
++  border-radius: var(--radius-full, 999px);
++  border: 1px solid var(--border, rgba(128, 128, 128, 0.25));
++  background: none;
++  color: var(--muted);
++  cursor: pointer;
++  text-transform: capitalize;
++}
++.pm-filter:hover {
++  border-color: currentColor;
++}
++.pm-filter--on {
++  background: var(--surface-2, rgba(0, 0, 0, 0.08));
++  border-color: currentColor;
++}
++.pm-filter--on.pm-filter--active { color: var(--accent, inherit); }
++.pm-filter--on.pm-filter--deferred { color: #eab308; }
++.pm-filter--on.pm-filter--done { color: var(--success, #16a34a); }
++.pm-filter__n {
++  font-size: 9px;
++  opacity: 0.85;
++  font-variant-numeric: tabular-nums;
++}
++.pm-project__body {
++  display: flex;
++  flex-direction: column;
++  padding-left: 6px;
++}
++
++.pm-empty {
++  padding: 6px 8px 6px 22px;
++  color: var(--muted);
++  font-size: 12px;
++  font-style: italic;
++}
++
++/* ------------------------------------------------------------------ */
++/* PM project-state tabs (view projects by their own state)           */
++/* Independent of the per-session filter inside each folder.          */
++/* ------------------------------------------------------------------ */
++.pm-project-tabs {
++  display: flex;
++  gap: 4px;
++  padding: 0 4px 8px;
++}
++.pm-project-tab {
++  flex: 1;
++  font-size: 11px;
++  line-height: 1;
++  padding: 5px 6px;
++  border-radius: 6px;
++  border: 1px solid var(--border, rgba(128, 128, 128, 0.25));
++  background: none;
++  color: var(--muted);
++  cursor: pointer;
++  text-transform: capitalize;
++  white-space: nowrap;
++}
++.pm-project-tab:hover {
++  border-color: currentColor;
++}
++.pm-project-tab--on {
++  background: var(--surface-2, rgba(0, 0, 0, 0.08));
++  color: var(--text, inherit);
++  border-color: currentColor;
++  font-weight: 600;
++}
+diff --git a/ui/src/styles/layout.mobile.css b/ui/src/styles/layout.mobile.css
+index 133681d..154414b 100644
+--- a/ui/src/styles/layout.mobile.css
++++ b/ui/src/styles/layout.mobile.css
+@@ -192,6 +192,16 @@
+     display: none;
+   }
+ 
++  /* Keep the Project Management toggle accessible in the mobile drawer.
++     Re-show the actions row but hide the desktop-only search/collapse so
++     only the kanban Projects button remains. */
++  .sidebar-brand__actions {
++    display: flex;
++  }
++  .sidebar-brand__actions .sidebar-brand__icon:not(.sidebar-projects-toggle) {
++    display: none;
++  }
++
+   .sidebar,
+   .sidebar--collapsed {
+     width: 100%;
