@@ -1,0 +1,128 @@
+<!doctype html>
+<!--
+  Projects panel — self-contained vanilla-JS UI (no build step, no React).
+  Served by the gateway at /plugins/projects/panel inside a sandboxed frame.
+
+  Layout:
+    Inbox = active sessions touched within last 48h across all projects (top rail)
+    Projects = collapsible sections, one per agent; each shows its sessions with
+      state (active/deferred/done) + noInbox flag.
+
+  MVP scope: no drag-drop, no bulk, no WebSocket push. Polling the API is fine.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Projects</title>
+  <style>
+    :root {
+      --bg: #0f1216;
+      --panel: #171b22;
+      --panel-2: #1e242e;
+      --border: #2a323e;
+      --text: #e6e9ee;
+      --muted: #8b94a3;
+      --active: #ff5c5c;
+      --deferred: #f2c94c;
+      --done: #3ecf8e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 16px;
+      background: var(--bg); color: var(--text);
+      font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    }
+    header {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 14px;
+    }
+    header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+    .pill { font-size: 12px; color: var(--muted); }
+    .section {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 8px; margin-bottom: 12px; overflow: hidden;
+    }
+    .section-head {
+      display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+      cursor: pointer; user-select: none; background: var(--panel-2);
+    }
+    .section-head .caret { transition: transform .12s; color: var(--muted); }
+    .section.collapsed .caret { transform: rotate(-90deg); }
+    .section-head .title { font-weight: 600; flex: 1; }
+    .section-head .count { color: var(--muted); font-size: 12px; }
+    .section-body { padding: 4px 0 8px; display: block; }
+    .section.collapsed .section-body { display: none; }
+    .session-row {
+      display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 24px;
+    }
+    .session-row .state-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+    .session-row.active .state-dot { background: var(--active); }
+    .session-row.deferred .state-dot { background: var(--deferred); }
+    .session-row.done .state-dot { background: var(--done); }
+    .session-row .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .session-row.done .name { color: var(--muted); text-decoration: line-through; }
+    .session-row .noinbox-badge {
+      font-size: 10px; padding: 1px 5px; border-radius: 3px;
+      background: var(--border); color: var(--muted); border: 1px solid var(--border);
+    }
+    .session-row .noinbox-badge.on { background: var(--deferred); color: #0f1216; border-color: var(--deferred); }
+    .session-row button.action {
+      background: none; border: 1px solid var(--border); color: var(--muted);
+      border-radius: 4px; padding: 2px 8px; font-size: 11px; cursor: pointer;
+    }
+    .session-row button.action:hover { color: var(--text); border-color: var(--muted); }
+    .session-row button.move-btn {
+      background: none; border: none; color: var(--muted); cursor: pointer;
+      font-size: 12px; padding: 2px 6px; opacity: 0; transition: opacity .12s;
+    }
+    .session-row:hover button.move-btn { opacity: 1; }
+    .session-row button.move-btn:hover { color: var(--text); }
+    .menu {
+      position: relative; display: inline-block;
+    }
+    .menu .dropdown {
+      display: none; position: absolute; right: 0; top: 22px; z-index: 20;
+      background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+      min-width: 160px; padding: 4px; box-shadow: 0 8px 24px rgba(0,0,0,.4);
+    }
+    .menu.open .dropdown { display: block; }
+    .menu .dropdown button {
+      display: block; width: 100%; text-align: left; background: none; border: none;
+      color: var(--text); padding: 7px 10px; font-size: 13px; border-radius: 4px; cursor: pointer;
+    }
+    .menu .dropdown button:hover { background: var(--panel); }
+    .menu .dropdown hr { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
+    .empty { color: var(--muted); padding: 4px 24px 8px; font-size: 13px; }
+    #status { color: var(--muted); font-size: 12px; min-height: 16px; }
+    .header-actions { margin-left: auto; display: flex; gap: 8px; }
+    .header-actions button {
+      background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+      border-radius: 4px; padding: 4px 10px; font-size: 12px; cursor: pointer;
+    }
+    .header-actions button:hover { border-color: var(--muted); }
+    .project-state {
+      font-size: 10px; padding: 1px 5px; border-radius: 3px;
+      background: var(--border); color: var(--muted);
+    }
+    .project-state.active { background: var(--active); color: #0f1216; }
+    .project-state.deferred { background: var(--deferred); color: #0f1216; }
+    .project-state.done { background: var(--done); color: #0f1216; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Projects</h1>
+    <div class="header-actions">
+      <button id="newProjectBtn">New Project</button>
+    </div>
+    <span class="pill" id="status">loading…</span>
+  </header>
+  <main id="root">
+    <!-- Inbox section will be inserted first -->
+    <!-- Project sections follow -->
+  </main>
+
+  <!-- panel.js is served separately at /plugins/projects/panel.js (same-origin). -->
+  <script src="/plugins/projects/panel.js?v=1"></script>
+</body>
+</html>

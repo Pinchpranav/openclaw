@@ -1,0 +1,2 @@
+# Dependencies are installed at build/start time inside the container.
+node_modules/

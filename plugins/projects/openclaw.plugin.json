@@ -1,0 +1,17 @@
+{
+  "id": "projects",
+  "name": "Project Management",
+  "description": "Agent-based projects (one agent = one project) with 3-state (active/deferred/done) conversation lifecycle + noInbox exceptions, backed by a plugin-owned JSON store.",
+  "activation": { "onStartup": true },
+  "contracts": { "gatewayMethodDispatch": ["authenticated-request"] },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "storePath": {
+        "type": "string",
+        "description": "Path to the projects JSON state store. Default /data/.openclaw/projects.json"
+      }
+    }
+  }
+}
