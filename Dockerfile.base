@@ -28,6 +28,12 @@ RUN git apply --whitespace=nowarn /tmp/control-ui-sidebar-scroll.patch \
   && echo "[patch] control-ui-sidebar-scroll: applied" \
   || echo "[patch] control-ui-sidebar-scroll: NOT applied (likely already in this version)"
 
+# Apply local UI patch: Project Management alt-sidebar (kanban toggle + panel).
+# This is REQUIRED for the PM view — fail the build if it doesn't apply cleanly.
+COPY patches/control-ui-projects-panel.patch /tmp/control-ui-projects-panel.patch
+RUN git apply --whitespace=nowarn /tmp/control-ui-projects-panel.patch \
+  && echo "[patch] control-ui-projects-panel: applied"
+
 RUN pnpm install --frozen-lockfile
 RUN pnpm ui:install
 
