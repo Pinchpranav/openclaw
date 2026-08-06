@@ -1,7 +1,5 @@
 // @ts-ignore — re-export chain is broken for external consumers (pinned-sdk.md §1)
 import { definePluginEntry } from "@openclaw/plugin-sdk/plugin-entry";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { load, save, mutate, resolveStorePath, type ProjectsAndSessionsStore, setSessionState, setNoInbox, setProjectState } from "./store.ts";
 import {
   listAgents,
@@ -12,22 +10,6 @@ import {
   deleteSession,
   type Result,
 } from "./gateway.ts";
-
-/** Serve the panel HTML at /plugins/projects/panel (sandboxed frame). */
-function servePanel(_req: unknown, res: any): void {
-  const htmlPath = resolve(new URL(import.meta.url).pathname, "..", "panel.html");
-  const html = readFileSync(htmlPath, "utf8");
-  res.setHeader?.("Content-Type", "text/html; charset=utf-8");
-  res.end?.(html);
-}
-
-/** Serve panel.js at /plugins/projects/panel.js (kept separate from the HTML). */
-function servePanelJs(_req: unknown, res: any): void {
-  const jsPath = resolve(new URL(import.meta.url).pathname, "..", "panel.js");
-  const js = readFileSync(jsPath, "utf8");
-  res.setHeader?.("Content-Type", "text/javascript; charset=utf-8");
-  res.end?.(js);
-}
 
 /** Parse session key `agent:<projectId>:<thread>` → extract projectId. */
 function parseAgentIdFromKey(key: string): string | null {
@@ -59,33 +41,6 @@ export default definePluginEntry({
   register(api: any) {
     const storePath = resolveStorePath(api);
     api.logger?.info?.(`[projects] store=${storePath}`);
-
-    // ─── CONTROL UI TAB: the sidebar button that opens the Projects panel ──
-    // surface:"tab" adds a sidebar tab (docs: sdk-overview.md "surface: tab").
-    // group:"control" places it in the control section (default if omitted).
-    // path points at the panel route below, rendered in a sandboxed frame.
-    api.session?.controls?.registerControlUiDescriptor?.({
-      surface: "tab",
-      id: "projects",
-      label: "Projects",
-      description: "Project management sidebar: projects, sessions, and 3-state lifecycle.",
-      icon: "projects",
-      group: "control",
-      order: 10,
-      path: "/plugins/projects/panel",
-    });
-
-    // ─── PANEL ROUTES: serve the UI + its script into the tab's frame ─────
-    api.registerHttpRoute?.({
-      path: "/plugins/projects/panel",
-      auth: "gateway",
-      handler: servePanel,
-    });
-    api.registerHttpRoute?.({
-      path: "/plugins/projects/panel.js",
-      auth: "gateway",
-      handler: servePanelJs,
-    });
 
     // ─── HTTP ROUTE: /plugins/projects/api ─────────────────────────────
     api.registerHttpRoute?.({
