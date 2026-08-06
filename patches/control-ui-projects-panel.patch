@@ -1,8 +1,16 @@
 diff --git a/ui/src/components/app-sidebar.ts b/ui/src/components/app-sidebar.ts
-index 8ba3b28..e0afd27 100644
+index 8ba3b28..2580669 100644
 --- a/ui/src/components/app-sidebar.ts
 +++ b/ui/src/components/app-sidebar.ts
-@@ -303,6 +303,19 @@ class AppSidebar extends LitElement {
+@@ -25,6 +25,7 @@ import {
+ import { controlUiPublicAssetPath } from "../app/public-assets.ts";
+ import "./theme-mode-toggle.ts";
+ import "./tooltip.ts";
++import "./projects-panel.ts";
+ import type { ThemeMode } from "../app/theme.ts";
+ import { t } from "../i18n/index.ts";
+ import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../lib/external-link.ts";
+@@ -303,6 +304,19 @@ class AppSidebar extends LitElement {
          </div>
          <div class="sidebar-brand__actions">
            ${this.renderSearch()}
@@ -22,7 +30,7 @@ index 8ba3b28..e0afd27 100644
            <openclaw-tooltip .content=${collapseTooltip}>
              <button
                class="sidebar-brand__icon"
-@@ -1660,14 +1673,27 @@ class AppSidebar extends LitElement {
+@@ -1660,14 +1674,27 @@ class AppSidebar extends LitElement {
          <div class="sidebar-shell">
            ${this.renderBrand()}
            <div class="sidebar-shell__body">
