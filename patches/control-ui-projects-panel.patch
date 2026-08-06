@@ -1,5 +1,5 @@
 diff --git a/ui/src/components/app-sidebar.ts b/ui/src/components/app-sidebar.ts
-index 8ba3b28..2580669 100644
+index 8ba3b28..8504548 100644
 --- a/ui/src/components/app-sidebar.ts
 +++ b/ui/src/components/app-sidebar.ts
 @@ -25,6 +25,7 @@ import {
@@ -10,7 +10,15 @@ index 8ba3b28..2580669 100644
  import type { ThemeMode } from "../app/theme.ts";
  import { t } from "../i18n/index.ts";
  import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../lib/external-link.ts";
-@@ -303,6 +304,19 @@ class AppSidebar extends LitElement {
+@@ -171,6 +172,7 @@ class AppSidebar extends LitElement {
+   @state() private sessionsResult: SessionsListResult | null = null;
+   @state() private sessionsAgentId: string | null = null;
+   @state() private sessionsLoading = false;
++  @state() private projectsView = false;
+ 
+   private stopSessionsSubscription: (() => void) | undefined;
+   private stopSessionCreatedSubscription: (() => void) | undefined;
+@@ -303,6 +305,19 @@ class AppSidebar extends LitElement {
          </div>
          <div class="sidebar-brand__actions">
            ${this.renderSearch()}
@@ -30,7 +38,7 @@ index 8ba3b28..2580669 100644
            <openclaw-tooltip .content=${collapseTooltip}>
              <button
                class="sidebar-brand__icon"
-@@ -1660,14 +1674,27 @@ class AppSidebar extends LitElement {
+@@ -1660,14 +1675,27 @@ class AppSidebar extends LitElement {
          <div class="sidebar-shell">
            ${this.renderBrand()}
            <div class="sidebar-shell__body">
@@ -68,7 +76,7 @@ index 8ba3b28..2580669 100644
              <div class="sidebar-footer-bar">
 diff --git a/ui/src/components/projects-panel.ts b/ui/src/components/projects-panel.ts
 new file mode 100644
-index 0000000..13b8870
+index 0000000..acb5b04
 --- /dev/null
 +++ b/ui/src/components/projects-panel.ts
 @@ -0,0 +1,394 @@
@@ -104,7 +112,7 @@ index 0000000..13b8870
 +
 +type ApiSession = {
 +  key: string;
-+  name?: string;
++  displayName?: string;
 +  label?: string;
 +  agentId?: string; // parsed from key by the plugin
 +  updatedAt?: number;
@@ -278,7 +286,7 @@ index 0000000..13b8870
 +  }
 +
 +  private renderInboxRow(s: ApiSession) {
-+    const name = s.name || s.label || s.key;
++    const name = s.displayName || s.label || s.key;
 +    const agent = this.agents.find((a) => a.id === s.agentId);
 +    return html`
 +      <div
@@ -307,7 +315,7 @@ index 0000000..13b8870
 +  }
 +
 +  private renderProjectRow(s: ApiSession) {
-+    const name = s.name || s.label || s.key;
++    const name = s.displayName || s.label || s.key;
 +    const hours = this.updatedHoursAgo(s);
 +    const time = hours === Infinity ? "—" : hours < 1 ? "now" : hours < 24 ? `${Math.round(hours)}h` : `${Math.round(hours / 24)}d`;
 +    return html`
