@@ -1,9 +1,7 @@
 name: Build Openclaw Docker Images
 
 on:
-  schedule:
-    # Check for new openclaw releases every hour
-    - cron: '0 * * * *'
+  # Manual dispatch only — no hourly schedule. (Was schedule + workflow_dispatch.)
   workflow_dispatch:
     inputs:
       version:

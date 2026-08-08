@@ -1,10 +1,8 @@
 name: CI Build
 
 on:
-  pull_request:
-  push:
-    branches:
-      - main
+  # Manual dispatch only — no commit/PR triggers. (Was push to main + pull_request.)
+  workflow_dispatch:
 
 jobs:
   docker-build:
