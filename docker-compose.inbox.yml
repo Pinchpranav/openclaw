@@ -1,0 +1,131 @@
+# Inbox-enabled deploy — OpenClaw gateway (2026.7.2-beta.7) + the inbox web app.
+#
+# This is the production compose: the gateway builds from the fork (bakes the
+# `projects` plugin) on the 2026.7.2-beta.7 base, and the inbox app builds from
+# Pinchpranav/inbox. Secrets come from a .env file (see the env refs below).
+#
+# Changes vs the previous deploy:
+#   1. BASE_IMAGE bumped 2026.7.1 → 2026.7.2-beta.7 (matches the app's pinned
+#      @openclaw/gateway-client 2026.7.2-beta.7). Build it first: dispatch the
+#      "Build ESR base" workflow_dispatch in Pinchpranav/openclaw with
+#      version=2026.7.2-beta.7 → ghcr.io/pinchpranav/openclaw-base:2026.7.2-beta.7
+#   2. Added the `inbox` service (own subdomain inbox.pranavself.uk via cloudflared
+#      → host :8082). It serves the SPA at / and reverse-proxies /gw/ to openclaw.
+#   3. OPENCLAW_ALLOWED_ORIGINS now includes both the Control UI origin and the
+#      inbox app origin (gateway.controlUi.allowedOrigins — the WS origin check).
+#   4. gateway.auth.mode=none — the gateway no longer gates on token/device
+#      pairing. Cloudflare Access (Zero Trust) on inbox.pranavself.uk is the
+#      access gate instead: add friends' emails there; they one-time login and
+#      the app works with no per-device `openclaw devices approve`. (Verify
+#      locally first: flip the local gateway to auth.mode=none, connect a fresh
+#      device, confirm operator scopes are granted without approval.)
+#   5. Removed the retired OPENCLAW__gateway__controlUi__dangerouslyDisableDeviceAuth
+#      flag (it's retired on 2026.7.2 — triggers a legacy→pairing migration).
+#
+# NOTE: the fork's entrypoint still requires OPENCLAW_GATEWAY_TOKEN non-empty
+# (it builds the nginx bearer-injection from it); in none-mode the gateway just
+# ignores that token for auth. So OPENCLAW_GATEWAY_TOKEN_2 must still be set in
+# .env (any value works, but keep the real one for the Control UI side).
+
+services:
+  openclaw:
+    build:
+      context: 'https://github.com/Pinchpranav/openclaw.git#main'
+      args:
+        BASE_IMAGE: 'ghcr.io/pinchpranav/openclaw-base:2026.7.2-beta.7'
+    ports:
+      - '${PORT:-8081}:${PORT:-8080}'
+    environment:
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY}
+      - 'OPENCLAW_PRIMARY_MODEL=ollama-cloud/deepseek-v4-flash:cloud'
+      - 'OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN_2}'
+      - 'BROWSER_CDP_URL=http://browser:9223'
+      - BROWSER_DEFAULT_PROFILE=openclaw
+      - BROWSER_EVALUATE_ENABLED=true
+      # Origin allowlist for the gateway WS connect — both the Control UI origin
+      # and the inbox app origin (gateway.controlUi.allowedOrigins).
+      - 'OPENCLAW_ALLOWED_ORIGINS=https://claw.pranavself.uk,https://inbox.pranavself.uk'
+      # No-auth mode: Cloudflare Access on inbox.pranavself.uk is the gate.
+      # The gateway grants operator scopes to connecting clients without
+      # device pairing/approval (verify locally before going live).
+      - OPENCLAW__gateway__auth__mode=none
+      - OPENCLAW__agents__defaults__memorySearch__provider=ollama
+      - 'OPENCLAW__agents__defaults__memorySearch__model=qwen3-embedding:0.6b'
+      - 'OPENCLAW__agents__defaults__memorySearch__remote__baseUrl=http://ollama:11434'
+      - OPENCLAW__agents__defaults__memorySearch__remote__apiKey=ollama-local
+      - OPENCLAW__session__reset__mode=idle
+      - OPENCLAW__session__reset__idleMinutes=525600
+      - OPENCLAW__tools__web__search__provider=ollama
+      - 'OPENCLAW__models__providers__ollama__baseUrl=https://ollama.com'
+      - OPENCLAW__tools__web__fetch__enabled=true
+      - OPENCLAW__gateway__controlUi__embedSandbox=trusted
+    volumes:
+      - 'openclaw-data:/data'
+      - '/home/pranav/OpenClaw_Shared:/data/imports'
+    depends_on:
+      - browser
+    restart: unless-stopped
+
+  # Inbox web app (sidebar + chat UI). Own subdomain: inbox.pranavself.uk
+  # (cloudflared → host :8082). Serves the Vue SPA at / and reverse-proxies
+  # /gw/ (REST + WebSocket) to the openclaw container at http://openclaw:8080 —
+  # same-origin, so no CORS. Builds from Pinchpranav/inbox. No state.
+  inbox:
+    build:
+      context: 'https://github.com/Pinchpranav/inbox.git#main'
+    ports:
+      - '${INBOX_PORT:-8082}:80'
+    depends_on:
+      - openclaw
+    restart: unless-stopped
+
+  browser:
+    image: 'coollabsio/openclaw-browser:latest'
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+      - CHROME_CLI=--remote-debugging-port=9222
+    volumes:
+      - 'browser-data:/config'
+    shm_size: 2g
+    restart: unless-stopped
+
+  searxng:
+    image: 'docker.io/searxng/searxng:latest'
+    container_name: searxng
+    restart: unless-stopped
+    environment:
+      - 'SEARXNG_BASE_URL=http://searxng:8080'
+    volumes:
+      - 'searxng_config:/etc/searxng:rw'
+      - 'searxng_cache:/var/cache/searxng'
+
+  valkey:
+    image: 'docker.io/valkey/valkey:9-alpine'
+    container_name: searxng-valkey
+    restart: unless-stopped
+    command: 'valkey-server --save 30 1 --loglevel warning'
+    volumes:
+      - 'valkey_data:/data'
+
+  ollama:
+    image: 'ollama/ollama:latest'
+    container_name: ollama
+    restart: unless-stopped
+    volumes:
+      - 'ollama_data:/root/.ollama'
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 3G
+    shm_size: 512m
+
+volumes:
+  openclaw-data: null
+  browser-data: null
+  searxng_config: null
+  searxng_cache: null
+  valkey_data: null
+  ollama_data: null
