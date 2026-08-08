@@ -16,8 +16,11 @@ services:
       - BROWSER_CDP_URL=http://browser:9223
       - BROWSER_DEFAULT_PROFILE=openclaw
       - BROWSER_EVALUATE_ENABLED=true
-      # CORS / Allowed Origins (optional)
-      # - OPENCLAW_ALLOWED_ORIGINS=http://localhost:5173,https://app.example.com
+      # CORS / Allowed Origins — add every browser origin that talks to the
+      # gateway: the Control UI origin AND the inbox web app origin, so the
+      # gateway's WebSocket origin-allowlist accepts both (gateway.controlUi.
+      # allowedOrigins). Required for public non-loopback browser origins.
+      - OPENCLAW_ALLOWED_ORIGINS=https://claw.pranavself.uk,https://inbox.pranavself.uk
       # Dot-notation config (optional - for settings not covered by dedicated env vars)
       # - OPENCLAW__channels__telegram__textChunkLimit=3500
       # JSON config via env var (optional - partial or full config as JSON)
@@ -44,6 +47,23 @@ services:
     volumes:
       - browser-data:/config
     shm_size: 2g
+    restart: unless-stopped
+
+  # Inbox web app (sidebar + chat UI). Own image, own subdomain
+  # (https://inbox.pranavself.uk). Serves the Vue SPA at / and reverse-proxies
+  # /gw/ (REST + WebSocket) to the openclaw container at http://openclaw:8080 —
+  # same-origin, so no CORS. The app pins @openclaw/gateway-client 2026.7.2, so
+  # the gateway base image must be 2026.7.2 to match. Add the inbox subdomain to
+  # OPENCLAW_ALLOWED_ORIGINS above. The user pastes the gateway bearer token
+  # once in the app's Settings panel (Option A, single-user). No state — the
+  # container only serves static files + proxies.
+  inbox:
+    build:
+      context: https://github.com/Pinchpranav/inbox.git#main
+    ports:
+      - "${INBOX_PORT:-8082}:80"
+    depends_on:
+      - openclaw
     restart: unless-stopped
 
 volumes:

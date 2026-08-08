@@ -197,6 +197,44 @@ OPENCLAW_ALLOWED_ORIGINS=http://localhost:5173,https://app.example.com
 OPENCLAW_ALLOWED_ORIGINS='["http://localhost:5173","https://app.example.com"]'
 ```
 
+### Inbox web app (sidebar + chat UI)
+
+A thin standalone web app ([Pinchpranav/inbox](https://github.com/Pinchpranav/inbox))
+turns the gateway into an inbox-style sidebar + chat. It runs as its **own
+container + own subdomain** and fronts the gateway same-origin:
+
+```
+Browser ──https──> inbox.pranavself.uk  (cloudflared tunnel → host :8082)
+                      │  inbox container (nginx)
+                      ├── /        → serve the Vue SPA
+                      └── /gw/     → http://openclaw:8080/   (same docker network)
+                                        └── openclaw nginx → gateway :18789
+```
+
+- **Same-origin `/gw` proxy** — the app's gateway URL is the relative path `/gw`,
+  so the browser is always same-origin with the gateway → no CORS / no preflight
+  (the gateway plugin route doesn't emit CORS headers; same-origin avoids the
+  browser's CORS check). The browser never talks to the Control UI origin
+  (`claw.pranavself.uk`).
+- **Allowed origins** — add the inbox subdomain to `OPENCLAW_ALLOWED_ORIGINS`
+  (e.g. `https://claw.pranavself.uk,https://inbox.pranavself.uk`). The inbox
+  nginx passes the real browser `Origin` through unchanged; the gateway trusts it
+  via `gateway.controlUi.allowedOrigins`. (The loopback `Origin` injection is a
+  **dev-only** convenience in the Vite proxy — don't use it in prod.)
+- **Token (Option A)** — the gateway bearer token is not baked into the app
+  image; each user pastes it once in the app's ⚙ Settings panel (localStorage).
+  Anyone with the token gets operator access — fine for single-user behind your
+  subdomain.
+- **Protocol version** — the app pins `@openclaw/gateway-client@2026.7.2-beta.7`
+  (protocol `2026.7.2`). The gateway **base image must be `2026.7.2`** to match
+  (a 2026.7.1 gateway rejects the client).
+- **HTTPS** — required (device auth uses `crypto.subtle`); cloudflared provides it.
+  The inbox nginx uses `proxy_read_timeout 86400s` so long silent WS streams
+  survive model-thinking gaps.
+
+The `inbox` service is included in [`docker-compose.yml`](docker-compose.yml)
+(builds from the inbox repo, exposes `${INBOX_PORT:-8082}:80`).
+
 ### Hooks (webhook automation, optional)
 
 | Variable | Default | Description |
