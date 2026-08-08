@@ -46,6 +46,10 @@ export default definePluginEntry({
     api.registerHttpRoute?.({
       path: "/plugins/projects/api",
       auth: "gateway",
+      // Dispatch gateway methods (agents.create/sessions.create/...) with the
+      // plugin's trusted-operator scopes (incl. operator.admin) so createProject
+      // can call agents.create. Plugins are admin-installed, so this is trusted.
+      gatewayRuntimeScopeSurface: "trusted-operator",
       handler: async (req: any, res: any) => {
         const method = (req?.method ?? "GET").toUpperCase();
 
@@ -92,11 +96,18 @@ export default definePluginEntry({
         }
 
         if (method === "POST") {
-          let body = "";
-          req.on?.("data", (chunk: any) => (body += chunk.toString()));
-          req.on?.("end", async () => {
-            try {
-              const payload = JSON.parse(body || "{}") as {
+          // Read the request body as an awaited promise so the gateway-method
+          // dispatch below runs INSIDE the route's async request scope (the
+          // `req.on("end")` callback would otherwise fire after the handler
+          // returns and the plugin request scope is gone).
+          const body = await new Promise<string>((resolve) => {
+            let data = "";
+            req.on?.("data", (chunk: any) => (data += chunk.toString()));
+            req.on?.("end", () => resolve(data));
+            req.on?.("error", () => resolve(data));
+          });
+          try {
+            const payload = JSON.parse(body || "{}") as {
                 op?: string;
                 key?: string;
                 state?: "active" | "deferred" | "done";
@@ -253,12 +264,11 @@ export default definePluginEntry({
               res.statusCode = 400;
               res.setHeader?.("Content-Type", "application/json; charset=utf-8");
               res.end?.(JSON.stringify({ ok: false, error: `Unknown op: ${payload.op}` }));
-            } catch (err) {
-              res.statusCode = 500;
-              res.setHeader?.("Content-Type", "application/json; charset=utf-8");
-              res.end?.(JSON.stringify({ ok: false, error: String(err) }));
-            }
-          });
+          } catch (err) {
+            res.statusCode = 500;
+            res.setHeader?.("Content-Type", "application/json; charset=utf-8");
+            res.end?.(JSON.stringify({ ok: false, error: String(err) }));
+          }
           return;
         }
 

@@ -89,7 +89,8 @@ export async function createAgent(
 ): Promise<Result<{ id: string }>> {
   const res = await dispatch<any>("agents.create", { name, emoji });
   if (!res.ok) return res;
-  return { ok: true, payload: { id: res.payload?.id ?? "" } };
+  // agents.create returns { ok, agentId, workspace } — read agentId (fallback id for safety).
+  return { ok: true, payload: { id: res.payload?.agentId ?? res.payload?.id ?? "" } };
 }
 
 /** Create a new session (thread) in a project. No message param — new sessions have no messages. */
