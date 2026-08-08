@@ -10,7 +10,7 @@
 #      "Build ESR base" workflow_dispatch in Pinchpranav/openclaw with
 #      version=2026.7.2-beta.7 → ghcr.io/pinchpranav/openclaw-base:2026.7.2-beta.7
 #   2. Added the `inbox` service (own subdomain inbox.pranavself.uk via cloudflared
-#      → host :8082). It serves the SPA at / and reverse-proxies /gw/ to openclaw.
+#      → host :8083). It serves the SPA at / and reverse-proxies /gw/ to openclaw.
 #   3. OPENCLAW_ALLOWED_ORIGINS now includes both the Control UI origin and the
 #      inbox app origin (gateway.controlUi.allowedOrigins — the WS origin check).
 #   4. gateway.auth.mode=none — the gateway no longer gates on token/device
@@ -67,14 +67,14 @@ services:
     restart: unless-stopped
 
   # Inbox web app (sidebar + chat UI). Own subdomain: inbox.pranavself.uk
-  # (cloudflared → host :8082). Serves the Vue SPA at / and reverse-proxies
+  # (cloudflared → host :8083). Serves the Vue SPA at / and reverse-proxies
   # /gw/ (REST + WebSocket) to the openclaw container at http://openclaw:8080 —
   # same-origin, so no CORS. Builds from Pinchpranav/inbox. No state.
   inbox:
     build:
       context: 'https://github.com/Pinchpranav/inbox.git#main'
     ports:
-      - '${INBOX_PORT:-8082}:80'
+      - '${INBOX_PORT:-8083}:80'
     depends_on:
       - openclaw
     restart: unless-stopped

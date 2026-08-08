@@ -204,7 +204,7 @@ turns the gateway into an inbox-style sidebar + chat. It runs as its **own
 container + own subdomain** and fronts the gateway same-origin:
 
 ```
-Browser ──https──> inbox.pranavself.uk  (cloudflared tunnel → host :8082)
+Browser ──https──> inbox.pranavself.uk  (cloudflared tunnel → host :8083)
                       │  inbox container (nginx)
                       ├── /        → serve the Vue SPA
                       └── /gw/     → http://openclaw:8080/   (same docker network)
@@ -233,7 +233,7 @@ Browser ──https──> inbox.pranavself.uk  (cloudflared tunnel → host :80
   survive model-thinking gaps.
 
 The `inbox` service is included in [`docker-compose.yml`](docker-compose.yml)
-(builds from the inbox repo, exposes `${INBOX_PORT:-8082}:80`).
+(builds from the inbox repo, exposes `${INBOX_PORT:-8083}:80`).
 
 ### Hooks (webhook automation, optional)
 
